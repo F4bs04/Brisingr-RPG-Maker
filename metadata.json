@@ -1,0 +1,5 @@
+{
+  "name": "RPG Grid Master",
+  "description": "Um criador de mapas táticos para RPG com gerenciamento de tokens de personagens e narrativa gerada por IA.",
+  "requestFramePermissions": []
+}
