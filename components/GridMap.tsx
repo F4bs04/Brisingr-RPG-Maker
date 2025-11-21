@@ -287,8 +287,11 @@ export const GridMap: React.FC<GridMapProps> = ({
                         
                         {/* Description Tooltip (Revealed on Hover) */}
                         {char.description && (
-                          <div className="absolute top-full mt-2 w-48 bg-black/90 text-gray-200 text-[10px] p-2 rounded border border-purple-500/50 opacity-0 group-hover:opacity-100 z-50 pointer-events-none shadow-xl transition-opacity">
-                             <p className="italic">{char.description}</p>
+                          <div className="absolute top-full mt-3 min-w-[250px] max-w-[300px] bg-gray-900/95 text-white text-sm p-4 rounded-xl border border-purple-500/50 opacity-0 group-hover:opacity-100 z-[100] pointer-events-none shadow-2xl transition-all duration-200 backdrop-blur-md transform scale-95 group-hover:scale-100 origin-top">
+                             <div className="text-xs font-bold text-purple-400 uppercase tracking-wider border-b border-gray-700 pb-2 mb-2 flex justify-between items-center">
+                                <span>{char.name}</span>
+                             </div>
+                             <p className="italic leading-relaxed text-gray-300">{char.description}</p>
                           </div>
                         )}
                     </div>
