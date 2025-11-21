@@ -8,6 +8,40 @@ import { X, Dice5, Swords, User } from 'lucide-react';
 import { Peer, DataConnection } from 'peerjs';
 // Removed unused import TOKEN_LIBRARY
 
+// Helper: Compress image to reduce payload size for WebRTC
+const compressImage = (file: File, maxWidth: number, quality: number = 0.7): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+
+        if (width > maxWidth) {
+          height = (maxWidth / width) * height;
+          width = maxWidth;
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            reject(new Error("Could not get canvas context"));
+            return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};
+
 function App() {
   // --- User State ---
   const [username, setUsername] = useState<string>('');
@@ -195,16 +229,17 @@ function App() {
       setSelectedTool('move_char');
   };
 
-  const handleUploadCharacter = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadCharacter = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const imageUrl = reader.result as string;
+      try {
+        // Compress token to max 300px width, 0.7 quality
+        const imageUrl = await compressImage(file, 300, 0.7);
         const name = file.name.split('.')[0].substring(0, 10);
         addCharacter(name, imageUrl);
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error("Error compressing token", err);
+      }
       e.target.value = '';
     }
   };
@@ -230,19 +265,20 @@ function App() {
       broadcast({ type: 'UPDATE_CHARS', payload: newChars });
   };
 
-  const handleUploadBackground = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadBackground = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!isHost) return;
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-          const res = reader.result as string;
+       try {
+          // Compress bg to max 1600px, 0.6 quality (good enough for map, keeps size low)
+          const res = await compressImage(file, 1600, 0.6);
           setBackgroundImage(res);
           broadcast({ type: 'UPDATE_BG', payload: res });
           setSelectedTool('paint');
-      };
-      reader.readAsDataURL(file);
-      e.target.value = '';
+       } catch (err) {
+          console.error("Error compressing bg", err);
+       }
+       e.target.value = '';
     }
   };
 

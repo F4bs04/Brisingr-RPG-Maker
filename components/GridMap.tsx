@@ -117,6 +117,11 @@ export const GridMap: React.FC<GridMapProps> = ({
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
+    // Prevent default behavior for middle click to avoid browser scroll icon
+    if (e.button === 1) {
+        e.preventDefault();
+    }
+
     isMouseDownRef.current = true;
     // Middle click (button 1) or Right click (button 2) or Pan Tool triggers pan
     if (selectedTool === 'pan' || e.button === 1 || e.button === 2) {
@@ -158,7 +163,7 @@ export const GridMap: React.FC<GridMapProps> = ({
 
   return (
     <div 
-      className={`w-full h-full bg-gray-950 overflow-hidden relative ${selectedTool === 'pan' ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
+      className={`w-full h-full bg-gray-950 overflow-hidden relative ${selectedTool === 'pan' || isDragging ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'}`}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
@@ -214,8 +219,12 @@ export const GridMap: React.FC<GridMapProps> = ({
                   `}
                   style={{ vectorEffect: 'non-scaling-stroke' }}
                   onMouseDown={(e) => {
-                    e.stopPropagation();
-                    handleHexClick(col, row);
+                    // FIX: Only capture Left Click (0) for hex interaction.
+                    // Allow Middle (1) and Right (2) to bubble to container for panning.
+                    if (e.button === 0) {
+                        e.stopPropagation();
+                        handleHexClick(col, row);
+                    }
                   }}
                   onMouseEnter={() => handleHexEnter(col, row)}
                 />
@@ -256,8 +265,9 @@ export const GridMap: React.FC<GridMapProps> = ({
                           `}
                           style={{ boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.8)' }}
                           onMouseDown={(e) => {
-                              // Pass event up but don't trigger hex click
-                              // Logic handled in parent via selection state
+                              // Pass event up
+                              // Panning logic handles button 1/2
+                              // Left click handled implicitly by selection logic outside if needed
                           }}
                         >
                           <img src={char.imageUrl} alt={char.name} className="w-full h-full object-cover" />
