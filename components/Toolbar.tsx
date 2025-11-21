@@ -20,7 +20,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { TerrainType, Tool, Character } from '../types';
-import { TERRAIN_COLORS, TERRAIN_LABELS } from '../constants';
+import { TERRAIN_COLORS, TERRAIN_LABELS, TOKEN_LIBRARY } from '../constants';
 
 interface ToolbarProps {
   selectedTool: Tool;
@@ -48,6 +48,7 @@ interface ToolbarProps {
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
   isHost: boolean;
   onToggleVisibility: (id: string) => void;
+  onAddFromLibrary: (filename: string) => void;
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -75,7 +76,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onConnect,
   connectionStatus,
   isHost,
-  onToggleVisibility
+  onToggleVisibility,
+  onAddFromLibrary
 }) => {
   const [activeTab, setActiveTab] = useState<'edit' | 'multiplayer'>('edit');
   const [customSides, setCustomSides] = useState<string>('100');
@@ -324,7 +326,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               <label className="flex items-center justify-center w-full p-3 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:border-purple-500 hover:text-purple-400 transition-colors mb-4">
                 <div className="flex items-center gap-2 text-sm">
                   <Upload size={16} />
-                  <span>Novo Token</span>
+                  <span>Novo Token (Upload)</span>
                 </div>
                 <input 
                   type="file" 
@@ -333,6 +335,25 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                   onChange={onUploadCharacter}
                 />
               </label>
+
+              {/* Token Library */}
+              <div className="grid grid-cols-4 gap-2 mb-4">
+                  {TOKEN_LIBRARY.map((file) => (
+                      <button
+                          key={file}
+                          onClick={() => onAddFromLibrary(file)}
+                          className="w-full aspect-square bg-gray-700 rounded hover:bg-purple-900/50 border border-gray-600 hover:border-purple-500 flex flex-col items-center justify-center gap-1 transition-all group"
+                          title={`Adicionar ${file.split('.')[0]}`}
+                      >
+                          <div className="w-6 h-6 rounded-full bg-gray-800 flex items-center justify-center text-[8px] font-bold text-gray-500 group-hover:text-purple-300">
+                              {file.substring(0, 2).toUpperCase()}
+                          </div>
+                          <span className="text-[8px] text-gray-500 group-hover:text-gray-300 truncate max-w-full px-1">
+                            {file.split('.')[0]}
+                          </span>
+                      </button>
+                  ))}
+              </div>
 
               {/* Selected Character Detail Editor */}
               {selectedCharacterId && selectedChar && (

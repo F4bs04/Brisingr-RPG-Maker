@@ -22,3 +22,14 @@ export const TERRAIN_LABELS: Record<TerrainType, string> = {
   [TerrainType.WALL]: 'Parede',
   [TerrainType.LAVA]: 'Lava',
 };
+
+export const TOKEN_LIBRARY = [
+  'knight.png',
+  'wizard.png',
+  'rogue.png',
+  'cleric.png',
+  'dragon.png',
+  'skeleton.png',
+  'goblin.png', 
+  'orc.png'
+];

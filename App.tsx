@@ -4,11 +4,16 @@ import { Character, GridMap as GridMapType, TerrainType, Tool, PeerMessage } fro
 import { Toolbar } from './components/Toolbar';
 import { GridMap } from './components/GridMap';
 import { generateMapNarrative } from './services/geminiService';
-import { X, Dice5 } from 'lucide-react';
+import { X, Dice5, Swords, User } from 'lucide-react';
 import { Peer, DataConnection } from 'peerjs';
+// Removed unused import TOKEN_LIBRARY
 
 function App() {
-  // --- State ---
+  // --- User State ---
+  const [username, setUsername] = useState<string>('');
+  const [isSetup, setIsSetup] = useState(false); // Controls the login screen
+
+  // --- Game State ---
   const [grid, setGrid] = useState<GridMapType>({});
   const [characters, setCharacters] = useState<Character[]>([]);
   const [backgroundImage, setBackgroundImage] = useState<string | null>(null);
@@ -33,8 +38,6 @@ function App() {
   const [connectionStatus, setConnectionStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   
   // Logic derivation for Host vs Player
-  // If I initiated a connection to someone else (connectionStatus === 'connected'), I am a Player.
-  // Otherwise, I am the Host of my own session (even if no one else is here yet).
   const isHost = connectionStatus !== 'connected';
 
   // Refs for access in callbacks/effects without stale closures
@@ -52,11 +55,19 @@ function App() {
   // --- Multiplayer Logic ---
 
   useEffect(() => {
+    // Only initialize PeerJS after user has entered their name to save resources/logic
+    if (!isSetup) return;
+
     const newPeer = new Peer();
     
     newPeer.on('open', (id) => {
+      console.log('Connected to PeerJS server with ID:', id);
       setMyPeerId(id);
       setPeer(newPeer);
+    });
+
+    newPeer.on('error', (err) => {
+        console.error('PeerJS Error:', err);
     });
 
     newPeer.on('connection', (conn) => {
@@ -83,8 +94,10 @@ function App() {
       });
     });
 
-    return () => newPeer.destroy();
-  }, []);
+    return () => {
+        newPeer.destroy();
+    };
+  }, [isSetup]); // Dependency on isSetup
 
   const connectToHost = () => {
       if(!peer || !hostPeerId) return;
@@ -95,7 +108,6 @@ function App() {
       conn.on('open', () => {
           setConnections([conn]); // As client, only connected to host
           setConnectionStatus('connected');
-          // When joining, default tool to something safe
           setSelectedTool('pan');
       });
 
@@ -104,7 +116,10 @@ function App() {
       });
       
       conn.on('close', () => setConnectionStatus('disconnected'));
-      conn.on('error', () => setConnectionStatus('disconnected'));
+      conn.on('error', (err) => {
+          console.error("Connection Error:", err);
+          setConnectionStatus('disconnected');
+      });
   };
 
   const broadcast = (msg: PeerMessage) => {
@@ -127,12 +142,8 @@ function App() {
         setLastRoll(msg.payload);
         setTimeout(() => setLastRoll(null), 4000);
     } else if (msg.type === 'REQUEST_MOVE') {
-        // Only Host processes requests in strict mode, but here we trust update logic
-        // Update local state then broadcast new state if needed
         setCharacters(prev => {
             const newChars = prev.map(c => c.id === msg.payload.id ? { ...c, x: msg.payload.x, y: msg.payload.y } : c);
-            // If I am host, I should propagate this move to other clients if I had multiple connections
-            // For simplified P2P, handled in handleCharacterMove logic
             return newChars;
         });
     }
@@ -141,11 +152,9 @@ function App() {
   // --- Game Handlers ---
 
   const handleTileClick = (x: number, y: number) => {
-    // Permissions check: Only host can edit terrain
     if (!isHost) return;
 
     const key = `${x},${y}`;
-    
     setGrid(prevGrid => {
         const newGrid = { ...prevGrid };
         if (selectedTool === 'paint') {
@@ -153,8 +162,6 @@ function App() {
         } else if (selectedTool === 'erase') {
             delete newGrid[key];
         }
-        
-        // Broadcast change
         broadcast({ type: 'UPDATE_GRID', payload: newGrid });
         return newGrid;
     });
@@ -162,41 +169,52 @@ function App() {
 
   const handleDiceRoll = (sides: number) => {
     const result = Math.floor(Math.random() * sides) + 1;
-    const payload = { result, type: sides, user: 'Alguém' };
+    // Send the actual username
+    const payload = { result, type: sides, user: username || 'Anônimo' };
     setLastRoll(payload);
     broadcast({ type: 'DICE_ROLL', payload });
     setTimeout(() => setLastRoll(null), 4000);
   };
 
+  // Unified function to add character (from Upload or Library)
+  const addCharacter = (name: string, imageUrl: string) => {
+      const newChar: Character = {
+          id: crypto.randomUUID(),
+          name: name,
+          imageUrl: imageUrl,
+          x: 0, y: 0, size: 1,
+          description: "Novo personagem",
+          isVisible: !isHost // Host uploads hidden by default
+      };
+
+      const newChars = [...characters, newChar];
+      setCharacters(newChars);
+      broadcast({ type: 'UPDATE_CHARS', payload: newChars });
+
+      setSelectedCharacterId(newChar.id);
+      setSelectedTool('move_char');
+  };
+
   const handleUploadCharacter = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Players CAN upload characters
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
         const imageUrl = reader.result as string;
         const name = file.name.split('.')[0].substring(0, 10);
-        
-        const newChar: Character = {
-            id: crypto.randomUUID(),
-            name: name,
-            imageUrl: imageUrl,
-            x: 0, y: 0, size: 1,
-            description: "Novo personagem",
-            // If Host uploads, default to Hidden. If Player uploads, default to Visible.
-            isVisible: !isHost
-        };
-
-        const newChars = [...characters, newChar];
-        setCharacters(newChars);
-        broadcast({ type: 'UPDATE_CHARS', payload: newChars });
-
-        setSelectedCharacterId(newChar.id);
-        setSelectedTool('move_char');
+        addCharacter(name, imageUrl);
       };
-      reader.readAsDataURL(file); // Convert to Base64 for sharing via PeerJS
+      reader.readAsDataURL(file);
       e.target.value = '';
     }
+  };
+  
+  const handleAddFromLibrary = (filename: string) => {
+      // Assuming images are in public/tokens/ folder
+      const name = filename.split('.')[0];
+      // Capitalize first letter
+      const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
+      addCharacter(formattedName, `/tokens/${filename}`);
   };
 
   const handleUpdateCharacterDescription = (id: string, desc: string) => {
@@ -213,9 +231,7 @@ function App() {
   };
 
   const handleUploadBackground = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Permissions check: Only host can upload background
     if (!isHost) return;
-
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
@@ -244,10 +260,8 @@ function App() {
   };
 
   const handleCharacterMove = (id: string, x: number, y: number) => {
-    // Everyone can move characters in this shared trust model
     const newChars = characters.map(c => c.id === id ? { ...c, x, y } : c);
     setCharacters(newChars);
-
     broadcast({ type: 'UPDATE_CHARS', payload: newChars });
   };
 
@@ -261,6 +275,54 @@ function App() {
     setNarrative(text);
     setIsGenerating(false);
   }, [grid, characters, isGenerating]);
+
+  // --- Start Screen / Login View ---
+  if (!isSetup) {
+    return (
+      <div className="flex h-screen w-screen bg-gray-950 items-center justify-center p-4 relative overflow-hidden">
+        {/* Background Decorations */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-indigo-900/20 via-gray-950 to-gray-950"></div>
+        <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-5"></div>
+        
+        <div className="z-10 max-w-md w-full bg-gray-900 border border-gray-800 shadow-2xl rounded-2xl p-8 flex flex-col items-center">
+          <div className="bg-indigo-600/20 p-4 rounded-full mb-6 border border-indigo-500/30">
+            <Swords size={48} className="text-indigo-400" />
+          </div>
+          
+          <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">RPG Grid Master</h1>
+          <p className="text-gray-400 mb-8 text-center text-sm">Crie mapas, gerencie tokens e jogue com seus amigos.</p>
+          
+          <div className="w-full space-y-4">
+            <div>
+              <label className="block text-xs uppercase font-bold text-gray-500 mb-2 ml-1">Seu Nome de Aventureiro</label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                <input 
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && username.trim() && setIsSetup(true)}
+                  placeholder="Ex: Gandalf, o Cinza"
+                  className="w-full bg-gray-950 border border-gray-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-600 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                  autoFocus
+                />
+              </div>
+            </div>
+            
+            <button 
+              onClick={() => setIsSetup(true)}
+              disabled={!username.trim()}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-800 disabled:text-gray-600 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-all shadow-lg shadow-indigo-900/20 flex items-center justify-center gap-2"
+            >
+              Entrar na Aventura
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Main App View ---
 
   return (
     <div className="flex h-screen w-screen bg-gray-950 text-white overflow-hidden">
@@ -296,18 +358,26 @@ function App() {
         connectionStatus={connectionStatus}
         isHost={isHost}
         onToggleVisibility={handleToggleVisibility}
+        onAddFromLibrary={handleAddFromLibrary}
       />
 
       <main className="flex-1 flex flex-col relative overflow-hidden">
         
         {/* Status Bar */}
         <div className="h-12 bg-gray-900/90 border-b border-gray-800 flex items-center px-6 justify-between z-10 shrink-0 backdrop-blur-sm absolute top-0 left-0 right-0 pointer-events-none">
-          <div className="text-sm text-gray-300 pointer-events-auto bg-black/50 px-3 py-1 rounded-full border border-gray-700">
-            {selectedTool === 'paint' && `Pintando: ${selectedTerrain}`}
-            {selectedTool === 'erase' && "Apagando"}
-            {selectedTool === 'pan' && "Modo Câmera"}
-            {selectedTool === 'move_char' && "Movendo Token"}
-            <span className="ml-4 text-xs text-gray-500 hidden md:inline">| Multiplayer: {connections.length} peers</span>
+          <div className="flex items-center gap-4 pointer-events-auto">
+            <div className="text-sm text-gray-300 bg-black/50 px-3 py-1 rounded-full border border-gray-700">
+              {selectedTool === 'paint' && `Pintando: ${selectedTerrain}`}
+              {selectedTool === 'erase' && "Apagando"}
+              {selectedTool === 'pan' && "Modo Câmera"}
+              {selectedTool === 'move_char' && "Movendo Token"}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 flex items-center gap-2 bg-black/30 px-3 py-1 rounded-full">
+            <User size={12} />
+            <span className="font-semibold text-gray-300">{username}</span>
+            <span className="text-gray-700">|</span>
+            <span>{connections.length > 0 ? `${connections.length} online` : 'Offline'}</span>
           </div>
         </div>
 
@@ -328,10 +398,14 @@ function App() {
         {/* Dice Result Overlay */}
         {lastRoll && (
              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[60]">
-                <div className="dice-roll bg-black/80 border-2 border-purple-500 p-6 rounded-2xl shadow-2xl flex flex-col items-center backdrop-blur-sm">
-                    <Dice5 size={48} className="text-purple-400 mb-2" />
-                    <div className="text-6xl font-black text-white">{lastRoll.result}</div>
-                    <div className="text-sm text-gray-400 mt-2 uppercase tracking-widest">D{lastRoll.type}</div>
+                <div className="dice-roll bg-black/80 border-2 border-purple-500 p-6 rounded-2xl shadow-2xl flex flex-col items-center backdrop-blur-sm min-w-[200px]">
+                    <div className="flex items-center gap-2 text-purple-300 mb-2 text-sm font-bold uppercase tracking-wider">
+                       <User size={14} /> {lastRoll.user}
+                    </div>
+                    <div className="text-6xl font-black text-white mb-1">{lastRoll.result}</div>
+                    <div className="text-xs text-gray-500 uppercase tracking-widest border-t border-gray-700 pt-2 w-full text-center">
+                        Rolagem D{lastRoll.type}
+                    </div>
                 </div>
              </div>
         )}

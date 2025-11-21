@@ -29,6 +29,13 @@
         100% { transform: rotate(360deg) scale(1); opacity: 1; }
       }
     </style>
+  <script>
+    // Polyfill process for browser environments to prevent crashes with Gemini SDK
+    // This ensures the app doesn't crash even if the build tool doesn't replace process.env
+    if (typeof process === 'undefined') {
+      window.process = { env: {} };
+    }
+  </script>
   <script type="importmap">
 {
   "imports": {
@@ -44,5 +51,6 @@
 </head>
   <body class="bg-gray-900 text-gray-100 font-sans antialiased overflow-hidden">
     <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
