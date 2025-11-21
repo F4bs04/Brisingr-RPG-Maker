@@ -2,7 +2,8 @@ import { GoogleGenAI } from "@google/genai";
 import { GridMap, Character, TerrainType } from "../types";
 
 // Initialize the client
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// MOVIDO PARA DENTRO DA FUNÇÃO PARA EVITAR CRASH NO LOAD
+// const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateMapNarrative = async (
   grid: GridMap,
@@ -61,6 +62,10 @@ export const generateMapNarrative = async (
   `;
 
   try {
+    // Inicializa o cliente apenas quando solicitado
+    // Isso previne erros fatais se a variável de ambiente não estiver configurada no load
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
@@ -73,6 +78,6 @@ export const generateMapNarrative = async (
     return response.text || "Não foi possível gerar a narrativa.";
   } catch (error) {
     console.error("Erro ao gerar narrativa:", error);
-    return "O oráculo está silencioso no momento (Erro na API Gemini). Verifique sua chave de API.";
+    return "O oráculo está silencioso no momento. Verifique se a CHAVE DE API está configurada corretamente nas variáveis de ambiente do seu deploy (Vercel/Netlify).";
   }
 };
