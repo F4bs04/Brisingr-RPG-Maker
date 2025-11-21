@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Character, GridMap as GridMapType, TerrainType, Tool, PeerMessage } from './types';
+import { Character, GridMap as GridMapType, TerrainType, Tool, PeerMessage, SessionData } from './types';
 import { Toolbar } from './components/Toolbar';
 import { GridMap } from './components/GridMap';
 import { generateMapNarrative } from './services/geminiService';
@@ -312,6 +312,69 @@ function App() {
     setIsGenerating(false);
   }, [grid, characters, isGenerating]);
 
+  // --- Session Management ---
+
+  const handleSaveSession = () => {
+    const sessionData: SessionData = {
+        grid,
+        characters,
+        backgroundImage,
+        hexSize,
+        version: '1.0',
+        timestamp: Date.now()
+    };
+    
+    const blob = new Blob([JSON.stringify(sessionData)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `rpg-session-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleLoadSession = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      try {
+        const text = await file.text();
+        const session = JSON.parse(text) as SessionData;
+        
+        // Validate basic structure
+        if (session.grid && Array.isArray(session.characters)) {
+            setGrid(session.grid);
+            setCharacters(session.characters);
+            setBackgroundImage(session.backgroundImage);
+            setHexSize(session.hexSize || 40);
+            
+            // If online, sync everyone
+            if (connections.length > 0) {
+                 const msg: PeerMessage = {
+                    type: 'SYNC_STATE',
+                    payload: {
+                        grid: session.grid,
+                        characters: session.characters,
+                        backgroundImage: session.backgroundImage,
+                        hexSize: session.hexSize || 40
+                    }
+                };
+                broadcast(msg);
+            }
+            alert("Sessão carregada com sucesso!");
+        } else {
+            alert("Arquivo de sessão inválido.");
+        }
+      } catch (err) {
+          console.error("Error loading session", err);
+          alert("Erro ao ler o arquivo.");
+      }
+      // Reset input
+      e.target.value = '';
+  };
+
   // --- Start Screen / Login View ---
   if (!isSetup) {
     return (
@@ -395,6 +458,8 @@ function App() {
         isHost={isHost}
         onToggleVisibility={handleToggleVisibility}
         onAddFromLibrary={handleAddFromLibrary}
+        onSaveSession={handleSaveSession}
+        onLoadSession={handleLoadSession}
       />
 
       <main className="flex-1 flex flex-col relative overflow-hidden">

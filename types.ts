@@ -31,6 +31,15 @@ export interface ViewState {
   translateY: number;
 }
 
+export interface SessionData {
+  grid: GridMap;
+  characters: Character[];
+  backgroundImage: string | null;
+  hexSize: number;
+  version: string;
+  timestamp: number;
+}
+
 // --- Multiplayer Types ---
 
 export type PeerMessage = 
