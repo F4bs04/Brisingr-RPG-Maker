@@ -285,13 +285,13 @@ export const GridMap: React.FC<GridMapProps> = ({
                           {char.name} {isGhost ? '(Oculto)' : ''}
                         </div>
                         
-                        {/* Description Tooltip (Revealed on Hover) */}
+                        {/* Description Tooltip (Revealed on Hover) - LARGE SIZE */}
                         {char.description && (
-                          <div className="absolute top-full mt-3 min-w-[250px] max-w-[300px] bg-gray-900/95 text-white text-sm p-4 rounded-xl border border-purple-500/50 opacity-0 group-hover:opacity-100 z-[100] pointer-events-none shadow-2xl transition-all duration-200 backdrop-blur-md transform scale-95 group-hover:scale-100 origin-top">
-                             <div className="text-xs font-bold text-purple-400 uppercase tracking-wider border-b border-gray-700 pb-2 mb-2 flex justify-between items-center">
+                          <div className="absolute top-full mt-4 min-w-[300px] max-w-[500px] bg-gray-900/95 text-white text-base p-5 rounded-2xl border border-purple-500/50 opacity-0 group-hover:opacity-100 z-[999] pointer-events-none shadow-2xl shadow-black/50 transition-all duration-200 backdrop-blur-md transform scale-95 group-hover:scale-100 origin-top">
+                             <div className="text-sm font-bold text-purple-400 uppercase tracking-wider border-b border-gray-700 pb-3 mb-3 flex justify-between items-center">
                                 <span>{char.name}</span>
                              </div>
-                             <p className="italic leading-relaxed text-gray-300">{char.description}</p>
+                             <p className="italic leading-relaxed text-gray-200">{char.description}</p>
                           </div>
                         )}
                     </div>
