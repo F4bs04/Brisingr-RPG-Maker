@@ -1,5 +1,7 @@
 import { TerrainType } from './types';
 
+export const APP_LOGO_URL = 'https://i.imgur.com/sQy1gKz.png';
+
 export const GRID_SIZE_DEFAULT = 20; // Increased default size for better hex experience
 
 // Using SVG fill classes or RGBA for SVG logic

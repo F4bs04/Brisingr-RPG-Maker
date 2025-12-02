@@ -12,6 +12,7 @@ interface GridMapProps {
   selectedTool: Tool;
   selectedCharacterId: string | null;
   backgroundImage: string | null;
+  backgroundDimensions?: { width: number, height: number };
   hexSize: number;
   isHost: boolean;
 }
@@ -27,6 +28,7 @@ export const GridMap: React.FC<GridMapProps> = ({
   selectedTool,
   selectedCharacterId,
   backgroundImage,
+  backgroundDimensions,
   hexSize,
   isHost
 }) => {
@@ -43,6 +45,12 @@ export const GridMap: React.FC<GridMapProps> = ({
   const HEX_WIDTH = Math.sqrt(3) * hexSize;
   const HEX_HEIGHT = 2 * hexSize;
   const VERT_DIST = HEX_HEIGHT * 0.75;
+
+  // Background Calc
+  const bgWidth = backgroundDimensions?.width || 2000;
+  const bgHeight = backgroundDimensions?.height || 2000;
+  const bgX = -bgWidth / 2;
+  const bgY = -bgHeight / 2;
 
   // Resize observer
   useEffect(() => {
@@ -187,15 +195,15 @@ export const GridMap: React.FC<GridMapProps> = ({
             <g>
                <image 
                   href={backgroundImage}
-                  x={-1000} 
-                  y={-1000}
-                  width={2000}
-                  height={2000}
-                  preserveAspectRatio="xMidYMid slice"
+                  x={bgX} 
+                  y={bgY}
+                  width={bgWidth}
+                  height={bgHeight}
+                  preserveAspectRatio="none"
                   className="opacity-60 pointer-events-none" 
                />
                {/* Reference Frame */}
-               <rect x={-1000} y={-1000} width={2000} height={2000} fill="none" stroke="rgba(255,255,255,0.1)" strokeDasharray="10,10"/>
+               <rect x={bgX} y={bgY} width={bgWidth} height={bgHeight} fill="none" stroke="rgba(255,255,255,0.1)" strokeDasharray="10,10"/>
             </g>
           )}
 
@@ -244,21 +252,24 @@ export const GridMap: React.FC<GridMapProps> = ({
              
              const isGhost = !char.isVisible && isHost;
              const { x, y } = getHexPixelCoordinates(char.x, char.y);
-             const size = hexSize * 1.6;
+             
+             // New Rectangular Dimensions
+             const tokenWidth = hexSize * 1.5;
+             const tokenHeight = hexSize * 2.2;
              
              return (
                 <g key={char.id} className={isGhost ? 'opacity-50' : 'opacity-100'}>
                   <foreignObject 
-                    x={x - size/2} 
-                    y={y - size/2} 
-                    width={size} 
-                    height={size}
+                    x={x - tokenWidth/2} 
+                    y={y - tokenHeight/2} 
+                    width={tokenWidth} 
+                    height={tokenHeight}
                     className="pointer-events-none overflow-visible"
                   >
                     <div className="w-full h-full relative flex items-center justify-center group">
                         <div 
                           className={`
-                            w-full h-full rounded-full border-2 border-white shadow-2xl overflow-hidden bg-black 
+                            w-full h-full rounded-xl border-[3px] border-white shadow-2xl overflow-hidden bg-gray-900 
                             transition-transform duration-200 pointer-events-auto cursor-pointer
                             ${selectedCharacterId === char.id ? 'ring-2 ring-purple-500 scale-110 shadow-purple-500/50' : ''}
                             ${isGhost ? 'grayscale' : ''}
@@ -275,8 +286,8 @@ export const GridMap: React.FC<GridMapProps> = ({
                         
                         {/* Ghost Icon for Host */}
                         {isGhost && (
-                           <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-full pointer-events-none">
-                               <EyeOff size={size/3} className="text-white/80" />
+                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl pointer-events-none">
+                               <EyeOff size={tokenWidth/3} className="text-white/80" />
                            </div>
                         )}
 
@@ -306,6 +317,8 @@ export const GridMap: React.FC<GridMapProps> = ({
                  {(() => {
                     const { x, y } = getHexPixelCoordinates(hoveredTile.x, hoveredTile.y);
                     return (
+                        <>
+                        {/* Base Indicator */}
                         <ellipse 
                             cx={x} 
                             cy={y} 
@@ -313,6 +326,17 @@ export const GridMap: React.FC<GridMapProps> = ({
                             ry={hexSize * 0.8 * ISO_SCALE_Y} 
                             className="fill-purple-500/30 stroke-purple-400 stroke-2 stroke-dasharray-4" 
                         />
+                        {/* Rectangular Ghost */}
+                        <rect
+                            x={x - (hexSize * 1.5)/2}
+                            y={y - (hexSize * 2.2)/2}
+                            width={hexSize * 1.5}
+                            height={hexSize * 2.2}
+                            rx={12}
+                            fill="none"
+                            className="stroke-purple-400 stroke-2 stroke-dasharray-4"
+                        />
+                        </>
                     );
                  })()}
              </g>

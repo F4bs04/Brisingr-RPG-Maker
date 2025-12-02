@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   Paintbrush, 
   Eraser, 
@@ -22,10 +22,13 @@ import {
   FolderUp,
   FileJson,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Globe,
+  Plus,
+  MapPin
 } from 'lucide-react';
-import { TerrainType, Tool, Character } from '../types';
-import { TERRAIN_COLORS, TERRAIN_LABELS, TOKEN_LIBRARY } from '../constants';
+import { TerrainType, Tool, Character, Scenario, UserLocation } from '../types';
+import { TERRAIN_COLORS, TERRAIN_LABELS, TOKEN_LIBRARY, APP_LOGO_URL } from '../constants';
 
 interface ToolbarProps {
   selectedTool: Tool;
@@ -56,6 +59,13 @@ interface ToolbarProps {
   onAddFromLibrary: (filename: string) => void;
   onSaveSession: () => void;
   onLoadSession: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  
+  // World Map Props
+  scenarios: Scenario[];
+  currentScenarioId: string;
+  onSwitchScenario: (id: string) => void;
+  onCreateScenario: (name: string, bgFile: File) => void;
+  userLocations: UserLocation[];
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -86,11 +96,24 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onToggleVisibility,
   onAddFromLibrary,
   onSaveSession,
-  onLoadSession
+  onLoadSession,
+  scenarios,
+  currentScenarioId,
+  onSwitchScenario,
+  onCreateScenario,
+  userLocations
 }) => {
   const [activeTab, setActiveTab] = useState<'edit' | 'multiplayer'>('edit');
   const [customSides, setCustomSides] = useState<string>('100');
   const [isCollapsed, setIsCollapsed] = useState(false);
+  
+  // World Map Gallery State
+  const [showWorldMap, setShowWorldMap] = useState(false);
+  const [newMapName, setNewMapName] = useState('');
+  const [newMapFile, setNewMapFile] = useState<File | null>(null);
+  const [newMapPreview, setNewMapPreview] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const copyToClipboard = () => {
     if (peerId) {
@@ -106,9 +129,29 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     }
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+        setNewMapFile(file);
+        const reader = new FileReader();
+        reader.onload = (ev) => setNewMapPreview(ev.target?.result as string);
+        reader.readAsDataURL(file);
+    }
+  };
+
+  const handleCreate = () => {
+      if (newMapName && newMapFile) {
+          onCreateScenario(newMapName, newMapFile);
+          setNewMapName('');
+          setNewMapFile(null);
+          setNewMapPreview(null);
+      }
+  };
+
   const selectedChar = characters.find(c => c.id === selectedCharacterId);
 
   return (
+    <>
     <div 
       className={`bg-gray-800 border-r border-gray-700 flex flex-col h-full shadow-xl z-20 transition-all duration-300 ease-in-out relative ${isCollapsed ? 'w-0' : 'w-80'}`}
     >
@@ -123,13 +166,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       <div className={`flex flex-col h-full overflow-hidden ${isCollapsed ? 'opacity-0 invisible' : 'opacity-100 visible'} transition-opacity duration-200`}>
         
-        <div className="p-4 border-b border-gray-700 shrink-0">
-            <h1 className="text-xl font-bold text-purple-400 flex items-center gap-2 whitespace-nowrap">
-            <MapIcon size={24} />
-            Hex Grid Master
-            </h1>
+        <div className="p-4 border-b border-gray-700 shrink-0 flex flex-col items-center">
+            <img src={APP_LOGO_URL} alt="Aethelgard" className="w-full max-w-[180px] mb-2 drop-shadow-md" />
             
-            <div className="flex gap-2 mt-4 bg-gray-900 p-1 rounded-lg">
+            <div className="flex gap-2 mt-4 bg-gray-900 p-1 rounded-lg w-full">
             <button 
                 onClick={() => setActiveTab('edit')}
                 className={`flex-1 py-1 px-2 text-xs font-bold rounded transition-all whitespace-nowrap ${activeTab === 'edit' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
@@ -178,9 +218,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                         <LinkIcon size={16} /> Conectar
                     </button>
                     </div>
-                    <p className="text-[10px] text-gray-500 mt-2 italic">
-                    Ao conectar, você sincronizará com o mapa do Host.
-                    </p>
                 </div>
                 )}
 
@@ -200,18 +237,22 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     </div>
                 </div>
                 )}
-
-                {!isHost && (
-                    <div className="text-xs bg-yellow-900/20 text-yellow-200 p-2 rounded border border-yellow-700/50 flex items-center gap-2">
-                        <ShieldAlert size={14} />
-                        <span>Como Jogador, você pode mover tokens e rolar dados. A edição do mapa é restrita ao Mestre.</span>
-                    </div>
-                )}
             </div>
             )}
 
             {activeTab === 'edit' && (
             <>
+                {/* World Map Button */}
+                <div className="mb-4">
+                    <button 
+                        onClick={() => setShowWorldMap(true)}
+                        className="w-full bg-gradient-to-r from-blue-900 to-indigo-900 hover:from-blue-800 hover:to-indigo-800 border border-blue-500/30 text-white py-3 px-4 rounded-lg flex items-center justify-center gap-3 shadow-lg transition-all group"
+                    >
+                        <Globe size={20} className="text-blue-300 group-hover:text-white" />
+                        <span className="font-bold uppercase tracking-wider text-sm">Mapa Mundial</span>
+                    </button>
+                </div>
+
                 {/* Tools Section */}
                 <div>
                 <h3 className="text-xs uppercase font-semibold text-gray-500 mb-3 tracking-wider">Ferramentas</h3>
@@ -314,7 +355,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                             <label className="flex items-center justify-center w-full p-3 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:border-blue-500 hover:text-blue-400 transition-colors">
                                 <div className="flex items-center gap-2 text-sm">
                                 <ImageIcon size={16} />
-                                <span>Upload Mapa</span>
+                                <span>Upload Mapa (Atual)</span>
                                 </div>
                                 <input 
                                 type="file" 
@@ -346,7 +387,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     <h3 className="text-xs uppercase font-semibold text-gray-500 mb-3 tracking-wider">Terrenos (Hex)</h3>
                     <div className="grid grid-cols-2 gap-2">
                     {Object.values(TerrainType).map((type) => {
-                        // Extract color class for preview circle, stripping svg specifics
+                        // Extract color class for preview circle
                         let colorClass = TERRAIN_COLORS[type].replace('fill-', 'bg-').split(' ')[0];
                         if (type === TerrainType.VOID) colorClass = 'bg-gray-800 border border-gray-600';
 
@@ -404,36 +445,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     ))}
                 </div>
 
-                {/* Selected Character Detail Editor */}
-                {selectedCharacterId && selectedChar && (
-                    <div className="mb-4 bg-gray-700 p-3 rounded-lg border border-purple-500/30">
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-xs font-bold text-purple-300">{selectedChar.name}</span>
-                        
-                        {/* Host Visibility Toggle in Details */}
-                        {isHost && (
-                            <button 
-                            onClick={() => onToggleVisibility(selectedChar.id)}
-                            className={`p-1 rounded transition-colors ${selectedChar.isVisible ? 'text-green-400 hover:text-green-300' : 'text-red-400 hover:text-red-300'}`}
-                            title={selectedChar.isVisible ? 'Visível para todos' : 'Oculto para jogadores'}
-                            >
-                                {selectedChar.isVisible ? <Eye size={16} /> : <EyeOff size={16} />}
-                            </button>
-                        )}
-                    </div>
-                    <textarea 
-                        placeholder="Descrição (visível ao passar o mouse)..."
-                        className="w-full bg-gray-800 text-xs text-white p-2 rounded border border-gray-600 resize-none h-16 focus:border-purple-500 outline-none"
-                        value={selectedChar.description || ''}
-                        onChange={(e) => onUpdateCharacterDescription(selectedChar.id, e.target.value)}
-                    />
-                    </div>
-                )}
-
+                {/* Character List */}
                 <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
-                    {characters.length === 0 && (
-                    <p className="text-gray-500 text-sm italic text-center">Nenhum personagem.</p>
-                    )}
                     {characters.map((char) => (
                     <div 
                         key={char.id}
@@ -448,7 +461,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                         }`}
                     >
                         <div className="flex items-center gap-3 overflow-hidden">
-                        <div className={`w-8 h-8 rounded-full overflow-hidden border shrink-0 ${!char.isVisible ? 'border-red-500 opacity-70' : 'border-gray-500'}`}>
+                        {/* Vertical Rectangle Thumbnail */}
+                        <div className={`w-8 h-12 rounded-md overflow-hidden border shrink-0 ${!char.isVisible ? 'border-red-500 opacity-70' : 'border-gray-500'}`}>
                             <img src={char.imageUrl} alt={char.name} className={`w-full h-full object-cover ${!char.isVisible ? 'grayscale' : ''}`} />
                         </div>
                         <div className="flex flex-col min-w-0">
@@ -465,7 +479,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                                     onToggleVisibility(char.id);
                                 }}
                                 className={`p-1 rounded hover:bg-gray-800 ${char.isVisible ? 'text-gray-400 hover:text-white' : 'text-red-400 hover:text-red-300'}`}
-                                title="Alternar Visibilidade"
                                 >
                                 {char.isVisible ? <Eye size={14} /> : <EyeOff size={14} />}
                                 </button>
@@ -545,5 +558,142 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
     </div>
+
+    {/* World Map / Scenarios Modal */}
+    {showWorldMap && (
+        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-gray-900 w-full max-w-4xl max-h-[90vh] rounded-2xl border border-gray-700 shadow-2xl flex flex-col overflow-hidden">
+                <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-950">
+                    <div>
+                        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                            <Globe className="text-blue-500" /> Galeria de Mapas
+                        </h2>
+                        <p className="text-gray-400 text-sm mt-1">Viaje entre diferentes cenários ou crie novos mundos.</p>
+                    </div>
+                    <button onClick={() => setShowWorldMap(false)} className="text-gray-500 hover:text-white transition-colors">
+                        <span className="text-2xl">&times;</span>
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 bg-gray-900 custom-scrollbar">
+                    
+                    {/* Add New Scenario Form (Host Only) */}
+                    {isHost && (
+                        <div className="mb-8 p-4 bg-gray-800/50 rounded-xl border border-gray-700 border-dashed">
+                            <h3 className="text-sm font-bold text-gray-300 uppercase tracking-wide mb-4 flex items-center gap-2">
+                                <Plus size={16} /> Adicionar Novo Cenário
+                            </h3>
+                            <div className="flex gap-4 items-end">
+                                <div className="flex-1">
+                                    <label className="block text-xs text-gray-500 mb-1">Nome do Cenário</label>
+                                    <input 
+                                        type="text" 
+                                        value={newMapName}
+                                        onChange={(e) => setNewMapName(e.target.value)}
+                                        className="w-full bg-gray-950 border border-gray-700 rounded p-2 text-white text-sm focus:border-blue-500 outline-none"
+                                        placeholder="Ex: Caverna do Dragão"
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <label className="block text-xs text-gray-500 mb-1">Imagem de Fundo</label>
+                                    <label className="flex items-center gap-2 bg-gray-700 hover:bg-gray-600 text-gray-300 px-3 py-2 rounded cursor-pointer transition-colors text-sm truncate">
+                                        <ImageIcon size={16} /> 
+                                        <span className="truncate">{newMapFile ? newMapFile.name : "Escolher Imagem..."}</span>
+                                        <input 
+                                            ref={fileInputRef}
+                                            type="file" 
+                                            className="hidden" 
+                                            accept="image/*"
+                                            onChange={handleFileChange}
+                                        />
+                                    </label>
+                                </div>
+                                <button 
+                                    onClick={handleCreate}
+                                    disabled={!newMapName || !newMapFile}
+                                    className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded font-bold text-sm transition-colors"
+                                >
+                                    Criar & Salvar
+                                </button>
+                            </div>
+                            {newMapPreview && (
+                                <div className="mt-4">
+                                    <p className="text-xs text-gray-500 mb-1">Prévia:</p>
+                                    <img src={newMapPreview} alt="Preview" className="h-32 rounded border border-gray-600 object-cover" />
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Scenarios Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {scenarios.map(scenario => {
+                            const isActive = scenario.id === currentScenarioId;
+                            // Count users in this scenario
+                            const usersHere = userLocations.filter(ul => ul.scenarioId === scenario.id).map(ul => ul.username);
+                            const hasUsers = usersHere.length > 0;
+
+                            return (
+                                <div 
+                                    key={scenario.id}
+                                    onClick={() => {
+                                        onSwitchScenario(scenario.id);
+                                        setShowWorldMap(false);
+                                    }}
+                                    className={`relative group rounded-xl overflow-hidden border-2 transition-all cursor-pointer hover:scale-[1.02] shadow-xl ${isActive ? 'border-green-500 ring-2 ring-green-500/20' : 'border-gray-700 hover:border-blue-500'}`}
+                                >
+                                    {/* Preview Image */}
+                                    <div className="h-40 bg-gray-800 relative">
+                                        {scenario.previewUrl ? (
+                                            <img src={scenario.previewUrl} alt={scenario.name} className="w-full h-full object-cover opacity-70 group-hover:opacity-100 transition-opacity" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center bg-gray-800 text-gray-600">
+                                                <MapIcon size={48} />
+                                            </div>
+                                        )}
+                                        
+                                        {/* Status Badges */}
+                                        <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                                            {isActive && (
+                                                <span className="bg-green-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg flex items-center gap-1">
+                                                    <MapPin size={10} /> VOCÊ ESTÁ AQUI
+                                                </span>
+                                            )}
+                                            {hasUsers && (
+                                                <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg flex items-center gap-1">
+                                                    <Users size={10} /> {usersHere.length} VIAJANTE(S)
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Content */}
+                                    <div className="p-4 bg-gray-900">
+                                        <h4 className={`font-bold text-lg mb-1 ${isActive ? 'text-green-400' : 'text-gray-200 group-hover:text-blue-400'}`}>
+                                            {scenario.name}
+                                        </h4>
+                                        
+                                        {/* User List */}
+                                        {hasUsers ? (
+                                            <div className="flex flex-wrap gap-1 mt-2">
+                                                {usersHere.map((u, i) => (
+                                                    <span key={i} className="text-[10px] bg-gray-800 text-gray-400 border border-gray-700 px-1.5 py-0.5 rounded">
+                                                        {u}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-gray-600 mt-2 italic">Ninguém neste local.</p>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+        </div>
+    )}
+    </>
   );
 };
