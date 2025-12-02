@@ -85,6 +85,37 @@ export const GridMap: React.FC<GridMapProps> = ({
     }
     return points.join(" ");
   };
+  
+  // Mathematical hex picking (pixel -> hex)
+  const getHexFromPixel = (x: number, y: number): { col: number, row: number } => {
+    // 1. Invert Isometric Scale on Y
+    const isoY = y / ISO_SCALE_Y;
+    
+    // 2. Standard Flat-Top Hex Math
+    const q = (Math.sqrt(3)/3 * x  -  1/3 * isoY) / hexSize;
+    const r = (2/3 * isoY) / hexSize;
+    
+    // 3. Round to nearest hex
+    let rx = Math.round(q);
+    let ry = Math.round(r);
+    let rz = Math.round(-q-r);
+    
+    const x_diff = Math.abs(rx - q);
+    const y_diff = Math.abs(ry - r);
+    const z_diff = Math.abs(rz - (-q-r));
+    
+    if (x_diff > y_diff && x_diff > z_diff) {
+        rx = -ry-rz;
+    } else if (y_diff > z_diff) {
+        ry = -rx-rz;
+    }
+    
+    // 4. Convert Axial (q,r) back to Offset (col,row)
+    const col = rx + (ry - (ry&1)) / 2;
+    const row = ry;
+    
+    return { col, row };
+  };
 
   // --- Viewport Culling & Bounds Logic ---
   // Calculate which hexes are visible based on translation/scale AND background limits
@@ -137,6 +168,14 @@ export const GridMap: React.FC<GridMapProps> = ({
     return coords;
   }, [viewState, viewportSize, HEX_WIDTH, VERT_DIST, backgroundImage, bgWidth, bgHeight, hexSize]);
 
+  // Optimized Grid Path for performance (One massive path instead of thousands of polys)
+  const gridPath = useMemo(() => {
+     return visibleHexes.map(({col, row}) => {
+         const {x, y} = getHexPixelCoordinates(col, row);
+         return getHexPoints(x, y);
+     }).map(points => `M ${points.split(' ').join(' L ')} Z`).join(' ');
+  }, [visibleHexes, getHexPixelCoordinates, getHexPoints]);
+
   // --- Event Handlers ---
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -157,6 +196,18 @@ export const GridMap: React.FC<GridMapProps> = ({
     if (selectedTool === 'pan' || e.button === 1 || e.button === 2) {
       setIsDragging(true);
       setDragStart({ x: e.clientX - viewState.translateX, y: e.clientY - viewState.translateY });
+    } else {
+        // Handle Left Click Interactions (Paint/Move) via Math check
+        // We do this here instead of on individual polygons to support batch rendering
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (rect) {
+            const mouseX = (e.clientX - rect.left - viewState.translateX) / viewState.scale;
+            const mouseY = (e.clientY - rect.top - viewState.translateY) / viewState.scale;
+            const {col, row} = getHexFromPixel(mouseX, mouseY);
+            
+            // Allow clicking even if technically outside bounds (for edge cases)
+            handleHexClick(col, row);
+        }
     }
   };
 
@@ -168,6 +219,25 @@ export const GridMap: React.FC<GridMapProps> = ({
         translateY: e.clientY - dragStart.y
       }));
       return;
+    }
+    
+    // Calculate Hover Math-wise
+    if (!isDragging) {
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (rect) {
+            const mouseX = (e.clientX - rect.left - viewState.translateX) / viewState.scale;
+            const mouseY = (e.clientY - rect.top - viewState.translateY) / viewState.scale;
+            const {col, row} = getHexFromPixel(mouseX, mouseY);
+            
+            if (!hoveredTile || hoveredTile.x !== col || hoveredTile.y !== row) {
+                setHoveredTile({x: col, y: row});
+                
+                // Drag-Paint Logic
+                if (isMouseDownRef.current && (selectedTool === 'paint' || selectedTool === 'erase')) {
+                    onTileClick(col, row);
+                }
+            }
+        }
     }
   };
 
@@ -181,13 +251,6 @@ export const GridMap: React.FC<GridMapProps> = ({
       onTileClick(col, row);
     } else if (selectedTool === 'move_char' && selectedCharacterId) {
       onCharacterDragEnd(selectedCharacterId, col, row);
-    }
-  };
-
-  const handleHexEnter = (col: number, row: number) => {
-    setHoveredTile({ x: col, y: row });
-    if (isMouseDownRef.current && (selectedTool === 'paint' || selectedTool === 'erase')) {
-      onTileClick(col, row);
     }
   };
 
@@ -234,45 +297,53 @@ export const GridMap: React.FC<GridMapProps> = ({
             </g>
           )}
 
-          {/* 2. Procedural Hex Grid Layer */}
+          {/* 2. Optimized Grid Layer (Single Path) */}
+          <path 
+             d={gridPath} 
+             fill="none" 
+             stroke="rgba(0,0,0,0.2)" 
+             strokeWidth="1" 
+             vectorEffect="non-scaling-stroke"
+             className="pointer-events-none"
+          />
+
+          {/* 3. Terrain Layer (Painted Tiles) */}
           {visibleHexes.map(({ col, row }) => {
+            const key = `${col},${row}`;
+            const terrain = grid[key];
+            
+            // Skip rendering VOID tiles since the background path handles the grid lines now
+            if (!terrain || terrain === TerrainType.VOID) return null;
+
             const { x, y } = getHexPixelCoordinates(col, row);
             const points = getHexPoints(x, y);
-            const terrain = grid[`${col},${row}`] || TerrainType.VOID;
-            const isVoid = terrain === TerrainType.VOID;
-            const isHovered = hoveredTile?.x === col && hoveredTile?.y === row;
 
             return (
-              <g key={`${col},${row}`}>
                 <polygon
+                  key={key}
                   points={points}
                   className={`
-                    transition-colors duration-100 vector-effect-non-scaling-stroke
+                    transition-colors duration-100 vector-effect-non-scaling-stroke pointer-events-none
                     ${TERRAIN_COLORS[terrain]}
-                    ${isVoid ? 'stroke-gray-800/40 fill-transparent hover:stroke-gray-600 hover:fill-white/5' : 'stroke-black/20'}
-                    ${isHovered ? 'stroke-white/80 stroke-2' : ''}
                   `}
                   style={{ vectorEffect: 'non-scaling-stroke' }}
-                  onMouseDown={(e) => {
-                    // FIX: Only capture Left Click (0) for hex interaction.
-                    // Allow Middle (1) and Right (2) to bubble to container for panning.
-                    if (e.button === 0) {
-                        e.stopPropagation();
-                        handleHexClick(col, row);
-                    }
-                  }}
-                  onMouseEnter={() => handleHexEnter(col, row)}
                 />
-                {viewState.scale > 1.5 && (
-                  <text x={x} y={y} dy=".3em" textAnchor="middle" className="text-[6px] fill-gray-500/50 pointer-events-none select-none font-mono">
-                    {col},{row}
-                  </text>
-                )}
-              </g>
             );
           })}
+          
+          {/* 4. Hover Highlight (Single Polygon) */}
+          {hoveredTile && (
+             <polygon 
+                points={getHexPoints(
+                    getHexPixelCoordinates(hoveredTile.x, hoveredTile.y).x, 
+                    getHexPixelCoordinates(hoveredTile.x, hoveredTile.y).y
+                )}
+                className="fill-white/10 stroke-white/50 stroke-2 pointer-events-none"
+                style={{ vectorEffect: 'non-scaling-stroke' }}
+             />
+          )}
 
-          {/* 3. Character Layer */}
+          {/* 5. Character/Object Layer */}
           {characters.map((char) => {
              // Fog of War Logic
              if (!char.isVisible && !isHost) return null;
@@ -280,60 +351,110 @@ export const GridMap: React.FC<GridMapProps> = ({
              const isGhost = !char.isVisible && isHost;
              const { x, y } = getHexPixelCoordinates(char.x, char.y);
              
-             // New Rectangular Dimensions
-             const tokenWidth = hexSize * 1.5;
-             const tokenHeight = hexSize * 2.2;
+             // Different rendering based on type
+             const isProp = char.type === 'prop';
+             
+             // Prop Dimensions: Fit within hex, slightly larger than pure hex
+             const propSize = hexSize * 2; 
+
+             // Character Dimensions: Rectangular Card
+             const charWidth = hexSize * 1.5;
+             const charHeight = hexSize * 2.2;
              
              return (
                 <g key={char.id} className={isGhost ? 'opacity-50' : 'opacity-100'}>
-                  <foreignObject 
-                    x={x - tokenWidth/2} 
-                    y={y - tokenHeight/2} 
-                    width={tokenWidth} 
-                    height={tokenHeight}
-                    className="pointer-events-none overflow-visible"
-                  >
-                    <div className="w-full h-full relative flex items-center justify-center group">
-                        <div 
-                          className={`
-                            w-full h-full rounded-md border-[1.5px] border-white shadow-2xl overflow-hidden bg-gray-900 
-                            transition-transform duration-200 pointer-events-auto cursor-pointer
-                            ${selectedCharacterId === char.id ? 'ring-2 ring-purple-500 scale-110 shadow-purple-500/50' : ''}
-                            ${isGhost ? 'grayscale' : ''}
-                          `}
-                          style={{ boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.8)' }}
-                          onMouseDown={(e) => {
-                              // Pass event up
-                              // Panning logic handles button 1/2
-                              // Left click handled implicitly by selection logic outside if needed
-                          }}
-                        >
-                          <img src={char.imageUrl} alt={char.name} className="w-full h-full object-cover" />
-                        </div>
-                        
-                        {/* Ghost Icon for Host */}
-                        {isGhost && (
-                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-md pointer-events-none">
-                               <EyeOff size={tokenWidth/3} className="text-white/80" />
-                           </div>
-                        )}
+                  
+                  {isProp ? (
+                      // --- PROP RENDERING (Raw Image) ---
+                      <g
+                        className={`cursor-pointer ${selectedCharacterId === char.id ? 'filter drop-shadow-[0_0_5px_rgba(168,85,247,0.8)]' : ''}`}
+                        onMouseDown={() => {
+                            // Interaction is handled by parent, but we add visual feedback
+                        }}
+                      >
+                         <image
+                            href={char.imageUrl}
+                            x={x - propSize/2}
+                            y={y - propSize/2}
+                            width={propSize}
+                            height={propSize}
+                            preserveAspectRatio="xMidYMid meet"
+                            className={`pointer-events-none ${isGhost ? 'grayscale' : ''}`}
+                         />
+                         
+                         {/* Optional: Simple hit area for easier selection if image is sparse */}
+                         <rect 
+                            x={x - propSize/3} y={y - propSize/3} 
+                            width={propSize/1.5} height={propSize/1.5} 
+                            fill="transparent" 
+                            className="pointer-events-auto cursor-pointer"
+                         />
 
-                        {/* Name Tag */}
-                        <div className="absolute -top-6 bg-gray-900/90 text-white text-[10px] px-2 py-1 rounded border border-gray-700 opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none shadow-lg transition-opacity">
-                          {char.name} {isGhost ? '(Oculto)' : ''}
+                         {/* Prop Name (Smaller/Different style) */}
+                         <text 
+                           x={x} y={y - propSize/2 - 5} 
+                           textAnchor="middle" 
+                           fill="white" 
+                           fontSize={hexSize/4}
+                           className="opacity-0 hover:opacity-100 select-none pointer-events-none shadow-black drop-shadow-md"
+                         >
+                            {char.name}
+                         </text>
+                      </g>
+
+                  ) : (
+                      // --- CHARACTER RENDERING (Framed Card) ---
+                      <foreignObject 
+                        x={x - charWidth/2} 
+                        y={y - charHeight/2} 
+                        width={charWidth} 
+                        height={charHeight}
+                        className="pointer-events-none overflow-visible"
+                      >
+                        <div className="w-full h-full relative flex items-center justify-center group">
+                            <div 
+                              className={`
+                                w-full h-full rounded-sm border border-white shadow-2xl overflow-hidden bg-gray-900 
+                                transition-transform duration-200 pointer-events-auto cursor-pointer
+                                ${selectedCharacterId === char.id ? 'ring-1 ring-purple-500 scale-110 shadow-purple-500/50' : ''}
+                                ${isGhost ? 'grayscale' : ''}
+                              `}
+                              style={{ boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.8)' }}
+                            >
+                              <img src={char.imageUrl} alt={char.name} className="w-full h-full object-cover" />
+                            </div>
+                            
+                            {/* Ghost Icon for Host */}
+                            {isGhost && (
+                               <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-md pointer-events-none">
+                                   <EyeOff size={charWidth/3} className="text-white/80" />
+                               </div>
+                            )}
+
+                            {/* Name Tag */}
+                            <div className="absolute -top-6 bg-gray-900/90 text-white text-[10px] px-2 py-1 rounded border border-gray-700 opacity-0 group-hover:opacity-100 whitespace-nowrap z-50 pointer-events-none shadow-lg transition-opacity">
+                              {char.name} {isGhost ? '(Oculto)' : ''}
+                            </div>
+                            
+                            {/* Description Tooltip (Revealed on Hover) */}
+                            {char.description && (
+                              <div 
+                                className="absolute top-full mt-2 min-w-[300px] max-w-[500px] bg-gray-900/95 text-white text-base p-5 rounded-2xl border border-purple-500/50 opacity-0 group-hover:opacity-100 z-[999] pointer-events-none shadow-2xl shadow-black/50 transition-opacity duration-200 backdrop-blur-md"
+                                style={{
+                                    left: '50%',
+                                    transform: `translateX(-50%) scale(${Math.max(0.2, 1 / viewState.scale)})`,
+                                    transformOrigin: 'top center'
+                                }}
+                              >
+                                 <div className="text-sm font-bold text-purple-400 uppercase tracking-wider border-b border-gray-700 pb-3 mb-3 flex justify-between items-center">
+                                    <span>{char.name}</span>
+                                 </div>
+                                 <p className="italic leading-relaxed text-gray-200">{char.description}</p>
+                              </div>
+                            )}
                         </div>
-                        
-                        {/* Description Tooltip (Revealed on Hover) - LARGE SIZE */}
-                        {char.description && (
-                          <div className="absolute top-full mt-4 min-w-[300px] max-w-[500px] bg-gray-900/95 text-white text-base p-5 rounded-2xl border border-purple-500/50 opacity-0 group-hover:opacity-100 z-[999] pointer-events-none shadow-2xl shadow-black/50 transition-all duration-200 backdrop-blur-md transform scale-95 group-hover:scale-100 origin-top">
-                             <div className="text-sm font-bold text-purple-400 uppercase tracking-wider border-b border-gray-700 pb-3 mb-3 flex justify-between items-center">
-                                <span>{char.name}</span>
-                             </div>
-                             <p className="italic leading-relaxed text-gray-200">{char.description}</p>
-                          </div>
-                        )}
-                    </div>
-                  </foreignObject>
+                      </foreignObject>
+                  )}
                 </g>
              );
           })}
@@ -342,21 +463,39 @@ export const GridMap: React.FC<GridMapProps> = ({
           {selectedTool === 'move_char' && selectedCharacterId && hoveredTile && (
              <g className="pointer-events-none animate-pulse opacity-60">
                  {(() => {
+                    const char = characters.find(c => c.id === selectedCharacterId);
+                    if (!char) return null;
+                    
                     const { x, y } = getHexPixelCoordinates(hoveredTile.x, hoveredTile.y);
-                    return (
-                        <>
-                        {/* Rectangular Ghost Only - No Circle Base */}
-                        <rect
-                            x={x - (hexSize * 1.5)/2}
-                            y={y - (hexSize * 2.2)/2}
-                            width={hexSize * 1.5}
-                            height={hexSize * 2.2}
-                            rx={6}
-                            fill="none"
-                            className="stroke-purple-400 stroke-2 stroke-dasharray-4"
-                        />
-                        </>
-                    );
+                    
+                    if (char.type === 'prop') {
+                        // Image Ghost for Props
+                        const propSize = hexSize * 2; 
+                        return (
+                            <image
+                                href={char.imageUrl}
+                                x={x - propSize/2}
+                                y={y - propSize/2}
+                                width={propSize}
+                                height={propSize}
+                                preserveAspectRatio="xMidYMid meet"
+                                className="opacity-50 grayscale"
+                            />
+                        );
+                    } else {
+                        // Rectangular Ghost for Characters
+                        return (
+                            <rect
+                                x={x - (hexSize * 1.5)/2}
+                                y={y - (hexSize * 2.2)/2}
+                                width={hexSize * 1.5}
+                                height={hexSize * 2.2}
+                                rx={3}
+                                fill="none"
+                                className="stroke-purple-400 stroke-1 stroke-dasharray-4"
+                            />
+                        );
+                    }
                  })()}
              </g>
           )}

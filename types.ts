@@ -9,6 +9,8 @@ export enum TerrainType {
   LAVA = 'LAVA'
 }
 
+export type TokenType = 'character' | 'prop';
+
 export interface Character {
   id: string;
   name: string;
@@ -18,6 +20,7 @@ export interface Character {
   y: number;
   size: number; // 1 means 1 hex
   isVisible: boolean; // Controls visibility for non-hosts
+  type: TokenType; // New field to distinguish between framed characters and raw props
 }
 
 // Sparse grid storage: key is "x,y" (e.g., "10,-5"), value is the terrain type

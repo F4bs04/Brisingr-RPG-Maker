@@ -25,9 +25,13 @@ import {
   ChevronRight,
   Globe,
   Plus,
-  MapPin
+  MapPin,
+  Box,
+  User as UserIcon,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
-import { TerrainType, Tool, Character, Scenario, UserLocation } from '../types';
+import { TerrainType, Tool, Character, Scenario, UserLocation, TokenType } from '../types';
 import { TERRAIN_COLORS, TERRAIN_LABELS, TOKEN_LIBRARY, APP_LOGO_URL } from '../constants';
 
 interface ToolbarProps {
@@ -38,7 +42,7 @@ interface ToolbarProps {
   characters: Character[];
   selectedCharacterId: string | null;
   setSelectedCharacterId: (id: string | null) => void;
-  onUploadCharacter: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onUploadToken: (file: File, type: TokenType) => void;
   onUpdateCharacterDescription: (id: string, desc: string) => void;
   onUploadBackground: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onDeleteCharacter: (id: string) => void;
@@ -56,9 +60,10 @@ interface ToolbarProps {
   connectionStatus: 'disconnected' | 'connecting' | 'connected';
   isHost: boolean;
   onToggleVisibility: (id: string) => void;
-  onAddFromLibrary: (filename: string) => void;
+  onAddFromLibrary: (filename: string, type: TokenType) => void;
   onSaveSession: () => void;
   onLoadSession: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onReorderCharacter: (id: string, direction: 'up' | 'down') => void;
   
   // World Map Props
   scenarios: Scenario[];
@@ -76,7 +81,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   characters,
   selectedCharacterId,
   setSelectedCharacterId,
-  onUploadCharacter,
+  onUploadToken,
   onUpdateCharacterDescription,
   onUploadBackground,
   onDeleteCharacter,
@@ -97,6 +102,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onAddFromLibrary,
   onSaveSession,
   onLoadSession,
+  onReorderCharacter,
   scenarios,
   currentScenarioId,
   onSwitchScenario,
@@ -106,6 +112,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const [activeTab, setActiveTab] = useState<'edit' | 'multiplayer'>('edit');
   const [customSides, setCustomSides] = useState<string>('100');
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [uploadTokenType, setUploadTokenType] = useState<TokenType>('character');
   
   // World Map Gallery State
   const [showWorldMap, setShowWorldMap] = useState(false);
@@ -137,6 +144,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         reader.onload = (ev) => setNewMapPreview(ev.target?.result as string);
         reader.readAsDataURL(file);
     }
+  };
+
+  const handleTokenUploadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file) {
+          onUploadToken(file, uploadTokenType);
+          e.target.value = ''; // Reset input
+      }
   };
 
   const handleCreate = () => {
@@ -343,8 +358,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                         </div>
                         <input 
                             type="range" 
-                            min="10" 
-                            max="100" 
+                            min="5" 
+                            max="200" 
                             value={hexSize} 
                             onChange={(e) => setHexSize(Number(e.target.value))}
                             className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
@@ -413,16 +428,32 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 <div>
                 <h3 className="text-xs uppercase font-semibold text-gray-500 mb-3 tracking-wider">Tokens</h3>
                 
+                {/* Type Toggle */}
+                <div className="flex bg-gray-900 rounded-lg p-1 mb-3">
+                    <button
+                        onClick={() => setUploadTokenType('character')}
+                        className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] font-bold uppercase rounded transition-colors ${uploadTokenType === 'character' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                        <UserIcon size={12} /> Personagem
+                    </button>
+                    <button
+                        onClick={() => setUploadTokenType('prop')}
+                        className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] font-bold uppercase rounded transition-colors ${uploadTokenType === 'prop' ? 'bg-gray-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
+                    >
+                        <Box size={12} /> Objeto
+                    </button>
+                </div>
+
                 <label className="flex items-center justify-center w-full p-3 border-2 border-dashed border-gray-600 rounded-lg cursor-pointer hover:border-purple-500 hover:text-purple-400 transition-colors mb-4">
                     <div className="flex items-center gap-2 text-sm">
                     <Upload size={16} />
-                    <span>Novo Token (Upload)</span>
+                    <span>Upload {uploadTokenType === 'character' ? 'Personagem' : 'Objeto'}</span>
                     </div>
                     <input 
                     type="file" 
                     className="hidden" 
                     accept="image/*"
-                    onChange={onUploadCharacter}
+                    onChange={handleTokenUploadChange}
                     />
                 </label>
 
@@ -431,7 +462,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                     {TOKEN_LIBRARY.map((file) => (
                         <button
                             key={file}
-                            onClick={() => onAddFromLibrary(file)}
+                            onClick={() => onAddFromLibrary(file, uploadTokenType)}
                             className="w-full aspect-square bg-gray-700 rounded hover:bg-purple-900/50 border border-gray-600 hover:border-purple-500 flex flex-col items-center justify-center gap-1 transition-all group"
                             title={`Adicionar ${file.split('.')[0]}`}
                         >
@@ -446,8 +477,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 </div>
 
                 {/* Character List */}
-                <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1 custom-scrollbar">
-                    {characters.map((char) => (
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1 custom-scrollbar">
+                    {characters.map((char, index) => (
                     <div 
                         key={char.id}
                         onClick={() => {
@@ -461,17 +492,50 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                         }`}
                     >
                         <div className="flex items-center gap-3 overflow-hidden">
-                        {/* Vertical Rectangle Thumbnail */}
-                        <div className={`w-8 h-12 rounded-md overflow-hidden border shrink-0 ${!char.isVisible ? 'border-red-500 opacity-70' : 'border-gray-500'}`}>
-                            <img src={char.imageUrl} alt={char.name} className={`w-full h-full object-cover ${!char.isVisible ? 'grayscale' : ''}`} />
-                        </div>
+                        {/* Thumbnail based on Type */}
+                        {char.type === 'prop' ? (
+                             <div className={`w-8 h-8 rounded shrink-0 flex items-center justify-center bg-transparent`}>
+                                <img src={char.imageUrl} alt={char.name} className={`w-full h-full object-contain ${!char.isVisible ? 'grayscale opacity-50' : ''}`} />
+                            </div>
+                        ) : (
+                            <div className={`w-8 h-12 rounded-md overflow-hidden border shrink-0 ${!char.isVisible ? 'border-red-500 opacity-70' : 'border-gray-500'}`}>
+                                <img src={char.imageUrl} alt={char.name} className={`w-full h-full object-cover ${!char.isVisible ? 'grayscale' : ''}`} />
+                            </div>
+                        )}
+
                         <div className="flex flex-col min-w-0">
                             <span className="text-sm font-medium truncate">{char.name}</span>
                             {!char.isVisible && isHost && <span className="text-[10px] text-red-400 flex items-center gap-1"><EyeOff size={8} /> Oculto</span>}
+                            {char.type === 'prop' && <span className="text-[9px] text-gray-500 italic">Objeto</span>}
                         </div>
                         </div>
                         
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 items-center">
+                            {isHost && (
+                                <div className="flex flex-col gap-0.5 mr-1 border-r border-gray-600 pr-1">
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onReorderCharacter(char.id, 'up');
+                                        }}
+                                        className="text-gray-400 hover:text-white p-0.5 hover:bg-gray-600 rounded"
+                                        title="Trazer para Frente"
+                                    >
+                                        <ArrowUp size={10} />
+                                    </button>
+                                    <button 
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            onReorderCharacter(char.id, 'down');
+                                        }}
+                                        className="text-gray-400 hover:text-white p-0.5 hover:bg-gray-600 rounded"
+                                        title="Enviar para Trás"
+                                    >
+                                        <ArrowDown size={10} />
+                                    </button>
+                                </div>
+                            )}
+
                             {isHost && (
                                 <button 
                                 onClick={(e) => {

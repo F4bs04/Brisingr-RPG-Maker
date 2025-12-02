@@ -1,6 +1,6 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Character, GridMap as GridMapType, TerrainType, Tool, PeerMessage, SessionData, Scenario, UserLocation } from './types';
+import { Character, GridMap as GridMapType, TerrainType, Tool, PeerMessage, SessionData, Scenario, UserLocation, TokenType } from './types';
 import { Toolbar } from './components/Toolbar';
 import { GridMap } from './components/GridMap';
 import { generateMapNarrative } from './services/geminiService';
@@ -34,8 +34,14 @@ const compressImage = (file: File, maxWidth: number, quality: number = 0.7): Pro
             return;
         }
         ctx.drawImage(img, 0, 0, width, height);
+        
+        // DETECT TYPE: If original is PNG, WebP or GIF, preserve transparency (Alpha Channel)
+        // JPEG does not support transparency, so we only use it if the source was not one of these.
+        const supportsAlpha = file.type === 'image/png' || file.type === 'image/webp' || file.type === 'image/gif';
+        const outputType = supportsAlpha ? 'image/png' : 'image/jpeg';
+
         resolve({
-            url: canvas.toDataURL('image/jpeg', quality),
+            url: canvas.toDataURL(outputType, quality),
             width,
             height
         });
@@ -361,14 +367,15 @@ function App() {
     setTimeout(() => setLastRoll(null), 4000);
   };
 
-  const addCharacter = (name: string, imageUrl: string) => {
+  const addCharacter = (name: string, imageUrl: string, type: TokenType) => {
       const newChar: Character = {
           id: crypto.randomUUID(),
           name: name,
           imageUrl: imageUrl,
           x: 0, y: 0, size: 1,
-          description: "Novo personagem",
-          isVisible: !isHost
+          description: "Novo token",
+          isVisible: !isHost,
+          type: type
       };
 
       const newChars = [...characters, newChar];
@@ -379,24 +386,22 @@ function App() {
       setSelectedTool('move_char');
   };
 
-  const handleUploadCharacter = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleUploadToken = async (file: File, type: TokenType) => {
     if (file) {
       try {
         const { url } = await compressImage(file, 300, 0.7);
         const name = file.name.split('.')[0].substring(0, 10);
-        addCharacter(name, url);
+        addCharacter(name, url, type);
       } catch (err) {
         console.error("Error compressing token", err);
       }
-      e.target.value = '';
     }
   };
   
-  const handleAddFromLibrary = (filename: string) => {
+  const handleAddFromLibrary = (filename: string, type: TokenType) => {
       const name = filename.split('.')[0];
       const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
-      addCharacter(formattedName, `/tokens/${filename}`);
+      addCharacter(formattedName, `/tokens/${filename}`, type);
   };
 
   const handleUpdateCharacterDescription = (id: string, desc: string) => {
@@ -408,6 +413,30 @@ function App() {
   const handleToggleVisibility = (id: string) => {
       if (!isHost) return;
       const newChars = characters.map(c => c.id === id ? { ...c, isVisible: !c.isVisible } : c);
+      setCharacters(newChars);
+      broadcast({ type: 'UPDATE_CHARS', payload: newChars });
+  };
+
+  const handleReorderCharacter = (id: string, direction: 'up' | 'down') => {
+      if (!isHost) return;
+      
+      const index = characters.findIndex(c => c.id === id);
+      if (index === -1) return;
+
+      const newChars = [...characters];
+
+      if (direction === 'up' && index < newChars.length - 1) {
+          // Move "Up" (Higher index = rendered later = Top layer)
+          // Swap with next
+          [newChars[index], newChars[index + 1]] = [newChars[index + 1], newChars[index]];
+      } else if (direction === 'down' && index > 0) {
+          // Move "Down" (Lower index = rendered earlier = Bottom layer)
+          // Swap with previous
+          [newChars[index], newChars[index - 1]] = [newChars[index - 1], newChars[index]];
+      } else {
+          return; // Can't move further
+      }
+
       setCharacters(newChars);
       broadcast({ type: 'UPDATE_CHARS', payload: newChars });
   };
@@ -636,7 +665,7 @@ function App() {
         characters={characters}
         selectedCharacterId={selectedCharacterId}
         setSelectedCharacterId={setSelectedCharacterId}
-        onUploadCharacter={handleUploadCharacter}
+        onUploadToken={handleUploadToken}
         onUpdateCharacterDescription={handleUpdateCharacterDescription}
         onUploadBackground={handleUploadBackground}
         onDeleteCharacter={handleDeleteCharacter}
@@ -662,6 +691,7 @@ function App() {
         onAddFromLibrary={handleAddFromLibrary}
         onSaveSession={handleSaveSession}
         onLoadSession={handleLoadSession}
+        onReorderCharacter={handleReorderCharacter}
         
         // World Map Props
         scenarios={scenarios}
