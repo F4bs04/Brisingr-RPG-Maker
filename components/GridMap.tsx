@@ -86,8 +86,8 @@ export const GridMap: React.FC<GridMapProps> = ({
     return points.join(" ");
   };
 
-  // --- Viewport Culling (Infinite Grid Logic) ---
-  // Calculate which hexes are visible based on translation/scale
+  // --- Viewport Culling & Bounds Logic ---
+  // Calculate which hexes are visible based on translation/scale AND background limits
   const visibleHexes = useMemo(() => {
     // Invert transform to find world bounds of the screen
     const left = (-viewState.translateX) / viewState.scale;
@@ -105,15 +105,37 @@ export const GridMap: React.FC<GridMapProps> = ({
     const endRow = Math.ceil(bottom / rowHeight) + 2;
 
     const coords = [];
+    
+    // Bounds check constants
+    const hasBg = !!backgroundImage;
+    const limitX = bgWidth / 2;
+    const limitY = bgHeight / 2;
+    const buffer = hexSize * 1.5; // Allow a small buffer of 1.5 hexes around the image
+
     for (let r = startRow; r <= endRow; r++) {
       // Adjust col range slightly for offset rows to prevent checkerboarding on edges
       const offsetAdjust = (r % 2) !== 0 ? -1 : 0;
       for (let c = startCol + offsetAdjust; c <= endCol; c++) {
+        
+        // BOUNDS CHECK: If background exists, restrain grid to image area
+        if (hasBg) {
+           // Re-calculate basic center for bounds check (simplified version of getHexPixelCoordinates)
+           const offset = (r % 2) * (HEX_WIDTH / 2);
+           const cx = c * HEX_WIDTH + offset;
+           const cy = r * VERT_DIST * ISO_SCALE_Y;
+           
+           // If hex center is outside image + buffer, skip rendering
+           if (cx < -limitX - buffer || cx > limitX + buffer ||
+               cy < -limitY - buffer || cy > limitY + buffer) {
+               continue;
+           }
+        }
+
         coords.push({ col: c, row: r });
       }
     }
     return coords;
-  }, [viewState, viewportSize, HEX_WIDTH, VERT_DIST]);
+  }, [viewState, viewportSize, HEX_WIDTH, VERT_DIST, backgroundImage, bgWidth, bgHeight, hexSize]);
 
   // --- Event Handlers ---
 
@@ -202,8 +224,13 @@ export const GridMap: React.FC<GridMapProps> = ({
                   preserveAspectRatio="none"
                   className="opacity-60 pointer-events-none" 
                />
-               {/* Reference Frame */}
-               <rect x={bgX} y={bgY} width={bgWidth} height={bgHeight} fill="none" stroke="rgba(255,255,255,0.1)" strokeDasharray="10,10"/>
+               {/* Reference Frame / Border */}
+               <rect x={bgX} y={bgY} width={bgWidth} height={bgHeight} fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth={2} strokeDasharray="10,10"/>
+               {/* Hard Shadow around image to delimit world */}
+               <rect x={bgX - 5000} y={bgY - 5000} width={10000} height={5000} fill="rgba(0,0,0,0.5)" pointerEvents="none" /> 
+               <rect x={bgX - 5000} y={bgY + bgHeight} width={10000} height={5000} fill="rgba(0,0,0,0.5)" pointerEvents="none" />
+               <rect x={bgX - 5000} y={bgY} width={5000} height={bgHeight} fill="rgba(0,0,0,0.5)" pointerEvents="none" />
+               <rect x={bgX + bgWidth} y={bgY} width={5000} height={bgHeight} fill="rgba(0,0,0,0.5)" pointerEvents="none" />
             </g>
           )}
 
@@ -269,7 +296,7 @@ export const GridMap: React.FC<GridMapProps> = ({
                     <div className="w-full h-full relative flex items-center justify-center group">
                         <div 
                           className={`
-                            w-full h-full rounded-xl border-[3px] border-white shadow-2xl overflow-hidden bg-gray-900 
+                            w-full h-full rounded-md border-[1.5px] border-white shadow-2xl overflow-hidden bg-gray-900 
                             transition-transform duration-200 pointer-events-auto cursor-pointer
                             ${selectedCharacterId === char.id ? 'ring-2 ring-purple-500 scale-110 shadow-purple-500/50' : ''}
                             ${isGhost ? 'grayscale' : ''}
@@ -286,7 +313,7 @@ export const GridMap: React.FC<GridMapProps> = ({
                         
                         {/* Ghost Icon for Host */}
                         {isGhost && (
-                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-xl pointer-events-none">
+                           <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-md pointer-events-none">
                                <EyeOff size={tokenWidth/3} className="text-white/80" />
                            </div>
                         )}
@@ -318,21 +345,13 @@ export const GridMap: React.FC<GridMapProps> = ({
                     const { x, y } = getHexPixelCoordinates(hoveredTile.x, hoveredTile.y);
                     return (
                         <>
-                        {/* Base Indicator */}
-                        <ellipse 
-                            cx={x} 
-                            cy={y} 
-                            rx={hexSize * 0.8} 
-                            ry={hexSize * 0.8 * ISO_SCALE_Y} 
-                            className="fill-purple-500/30 stroke-purple-400 stroke-2 stroke-dasharray-4" 
-                        />
-                        {/* Rectangular Ghost */}
+                        {/* Rectangular Ghost Only - No Circle Base */}
                         <rect
                             x={x - (hexSize * 1.5)/2}
                             y={y - (hexSize * 2.2)/2}
                             width={hexSize * 1.5}
                             height={hexSize * 2.2}
-                            rx={12}
+                            rx={6}
                             fill="none"
                             className="stroke-purple-400 stroke-2 stroke-dasharray-4"
                         />
